@@ -94,7 +94,8 @@ pip install -r requirements.txt
 
 ### 4. Configure environment variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root.
+Copy `.env.example` to `.env` and replace the placeholder values with your actual credentials.
 
 ```env
 RESEND_API_KEY=your_resend_api_key
