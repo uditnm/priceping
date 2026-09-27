@@ -6,15 +6,18 @@ import re
 import json
 import sys
 import resend
+
+from upstash_redis import Redis
 from dotenv import load_dotenv
 
 load_dotenv()
 
-if len(sys.argv) == 2 and sys.argv[1] == "--check-all":
-    check_all = True
-elif len(sys.argv) == 1:
-    check_all = False
-    PRODUCT_URL = sys.argv[1]
+if len(sys.argv) == 2:
+    if sys.argv[1] == "--check-all":
+        check_all = True
+    else:
+        check_all = False
+        PRODUCT_URL = sys.argv[1]
 else:
     print("Usage:")
     print("  python priceping.py <myntra-product-url>")
@@ -29,6 +32,9 @@ HEADERS = {
         "Chrome/140.0.0.0 Safari/537.36"
     )
 }
+
+redis = Redis(url = os.getenv("UPSTASH_REDIS_REST_URL"), token = os.getenv("UPSTASH_REDIS_REST_TOKEN"))
+STATE_KEY = "priceping:products"
 
 def get_myntra_product(url):
     response = requests.get(
@@ -80,40 +86,39 @@ def get_myntra_product(url):
 
 
 def save_product(product):
-    try:
-        with open("state.json", "r") as file:
-            state = json.load(file)
-    except FileNotFoundError:
-        state = {"products": {}}
+    products = redis.get(STATE_KEY)
 
-    state["products"][product["url"]] = {
+    if products is None:
+        products = {}
+    else:
+        products = json.loads(products)
+
+    products[product["url"]] = {
         "product_name": product["product_name"],
         "price": product["price"]
     }
 
-    with open("state.json", "w") as file:
-        json.dump(state, file, indent=4)
+    redis.set(STATE_KEY, json.dumps(products))
 
 
 def load_product(url):
-    try:
-        with open("state.json", "r") as file:
-            state = json.load(file)
+    products = redis.get(STATE_KEY)
 
-        return state["products"].get(url)
-
-    except FileNotFoundError:
+    if products is None:
         return None
 
+    products = json.loads(products)
+
+    return products.get(url)
+
+
 def load_all_products():
-    try:
-        with open("state.json", "r") as file:
-            state = json.load(file)
+    products = redis.get(STATE_KEY)
 
-        return state.get("products", {})
-
-    except FileNotFoundError:
+    if products is None:
         return {}
+
+    return json.loads(products)
 
 
 def send_email_notification(product, previous_price):
