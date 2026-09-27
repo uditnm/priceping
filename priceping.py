@@ -16,13 +16,19 @@ load_dotenv()
 if len(sys.argv) == 2:
     if sys.argv[1] == "--check-all":
         check_all = True
+        remove_product_url = None
     else:
         check_all = False
+        remove_product_url = None
         PRODUCT_URL = sys.argv[1]
+elif len(sys.argv) == 3 and sys.argv[1] == "--remove":
+    check_all = False
+    remove_product_url = sys.argv[2]
 else:
     print("Usage:")
     print("  python priceping.py <myntra-product-url>")
     print("  python priceping.py --check-all")
+    print("  python priceping.py --remove <myntra-product-url>")
     sys.exit(1)
 
 
@@ -137,6 +143,19 @@ def load_all_products():
     return json.loads(products)
 
 
+def remove_product(url):
+    products = load_all_products()
+
+    if url not in products:
+        print("Product is not being tracked.")
+        return
+
+    del products[url]
+    redis.set(STATE_KEY, json.dumps(products))
+
+    print("Product removed from tracker.")
+
+
 def send_email_notification(product, previous_price):
     current_price = product["price"]
 
@@ -204,12 +223,13 @@ def check_product(url):
     save_product(product)
 
 
-if check_all:
+if remove_product_url is not None:
+    remove_product(remove_product_url)
+elif check_all:
     products = load_all_products()
 
     for url in products.keys():
         print(f"Checking {url}")
         check_product(url)
-
 else:
     check_product(PRODUCT_URL)

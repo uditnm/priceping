@@ -11,6 +11,7 @@ PricePing lets you save Myntra product URLs and automatically check their prices
 * Detect price increases and decreases
 * Persist product state using Upstash Redis
 * Send price-change notifications using Resend
+* Remove products from the tracker
 * Run daily using Windows Task Scheduler
 * Simple CLI — no frontend or server required
 
@@ -130,6 +131,18 @@ python priceping.py --check-all
 ```
 
 This loads all previously tracked products from Upstash Redis and checks each one.
+
+### Remove a product
+
+To stop tracking a specific product:
+
+```bash
+python priceping.py --remove "<myntra-product-url>"
+```
+
+The product is removed from the tracked products stored in Upstash Redis.
+
+The removal operation does not make a request to Myntra.
 
 ## Price Change Notifications
 
