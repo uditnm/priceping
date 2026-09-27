@@ -6,6 +6,7 @@ import re
 import json
 import sys
 import resend
+import time
 
 from upstash_redis import Redis
 from dotenv import load_dotenv
@@ -37,15 +38,30 @@ redis = Redis(url = os.getenv("UPSTASH_REDIS_REST_URL"), token = os.getenv("UPST
 STATE_KEY = "priceping:products"
 
 def get_myntra_product(url):
-    response = requests.get(
-        url,
-        headers=HEADERS,
-        timeout=10
-    )
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                url,
+                headers=HEADERS,
+                timeout=30
+            )
 
-    response.raise_for_status()
+            response.raise_for_status()
+            break
+
+        except requests.exceptions.RequestException as e:
+            if attempt == 2:
+                raise
+
+            print(f"Request failed, retrying... ({attempt + 1}/3)")
+            time.sleep(5)
 
     soup = BeautifulSoup(response.text, "html.parser")
+
+    print(f"Status: {response.status_code}")
+    print(f"URL: {response.url}")
+    print(f"Response length: {len(response.text)}")
+    print(f"Title: {soup.title}")
 
     # Product name
     name = soup.find(
@@ -192,7 +208,7 @@ if check_all:
     products = load_all_products()
 
     for url in products.keys():
-        print(f"Checking {url}...")
+        print(f"Checking {url}")
         check_product(url)
 
 else:
