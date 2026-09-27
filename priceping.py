@@ -1,14 +1,26 @@
+import os
+
 import requests
 from bs4 import BeautifulSoup
 import re
 import json
 import sys
+import resend
+from dotenv import load_dotenv
 
-if len(sys.argv) != 2:
-    print("Usage: python priceping.py <myntra-product_url>")
+load_dotenv()
+
+if len(sys.argv) == 2 and sys.argv[1] == "--check-all":
+    check_all = True
+elif len(sys.argv) == 1:
+    check_all = False
+    PRODUCT_URL = sys.argv[1]
+else:
+    print("Usage:")
+    print("  python priceping.py <myntra-product-url>")
+    print("  python priceping.py --check-all")
     sys.exit(1)
 
-PRODUCT_URL = sys.argv[1]
 
 HEADERS = {
     "User-Agent": (
@@ -30,13 +42,6 @@ def get_myntra_product(url):
     soup = BeautifulSoup(response.text, "html.parser")
 
     # Product name
-    title = soup.find("title")
-
-    if not title:
-        raise ValueError("Could not find product name")
-
-    #product_name = title.get_text(strip=True)
-
     name = soup.find(
             "meta",
             attrs={"name": "keywords"}
@@ -45,9 +50,9 @@ def get_myntra_product(url):
     if not name:
         raise ValueError("Could not find product name")
 
-    prod_name_text = name["content"]
+    keywords = name["content"]
 
-    product_name = prod_name_text.split(",")[0].strip()
+    product_name = keywords.split(",")[0].strip()
 
     # Product description
     description = soup.find(
@@ -100,29 +105,90 @@ def load_product(url):
     except FileNotFoundError:
         return None
 
-        
-product = get_myntra_product(PRODUCT_URL)
-previous_product = load_product(PRODUCT_URL)
+def load_all_products():
+    try:
+        with open("state.json", "r") as file:
+            state = json.load(file)
 
-print(f"Product: {product['product_name']}")
-print(f"Current price: ₹{product['price']}")
+        return state.get("products", {})
 
-if previous_product is None:
-    print("First run — saving product.")
+    except FileNotFoundError:
+        return {}
 
-else:
-    previous_price = previous_product["price"]
+
+def send_email_notification(product, previous_price):
     current_price = product["price"]
 
-    if current_price < previous_price:
-        difference = previous_price - current_price
-        print(f"Price dropped by ₹{difference}!")
-        
-    elif current_price > previous_price:
-        difference = current_price - previous_price
-        print(f"Price increased by ₹{difference}!")
+    if(current_price < previous_price):
+        subject = f"Price dropped for {product['product_name']}"
+        change_text = f"Price dropped by ₹{previous_price - current_price}!"
+    else:
+        subject = f"Price increased for {product['product_name']}"
+        change_text = f"Price increased by ₹{current_price - previous_price}!"
+
+    html = f"""
+    <h2>{product['product_name']}</h2>
+
+    <p>{change_text}</p>
+
+    <p>
+        Previous price: ₹{previous_price}<br>
+        Current price: ₹{current_price}
+    </p>
+
+    <p>
+        <a href="{product['url']}">View product</a>
+    </p>
+    """
+
+    resend.api_key = os.getenv("RESEND_API_KEY")
+
+    resend.Emails.send({
+        "from": "PricePing <onboarding@resend.dev>",
+        "to": [os.getenv("EMAIL_TO")],
+        "subject": subject,
+        "html": html
+    })
+
+
+def check_product(url):
+    product = get_myntra_product(url)
+    previous_product = load_product(url)
+
+    print(f"Product: {product['product_name']}")
+    print(f"Current price: ₹{product['price']}")
+
+    if previous_product is None:
+        print("First run — saving product.")
 
     else:
-        print("Price unchanged.")
+        previous_price = previous_product["price"]
+        current_price = product["price"]
 
-save_product(product)
+        if current_price < previous_price:
+            difference = previous_price - current_price
+            print(f"Price dropped by ₹{difference}!")
+
+            send_email_notification(product, previous_price)
+            
+        elif current_price > previous_price:
+            difference = current_price - previous_price
+            print(f"Price increased by ₹{difference}!")
+
+            send_email_notification(product, previous_price)
+
+        else:
+            print("Price unchanged.")
+
+    save_product(product)
+
+
+if check_all:
+    products = load_all_products()
+
+    for url in products.keys():
+        print(f"Checking {url}...")
+        check_product(url)
+
+else:
+    check_product(PRODUCT_URL)
